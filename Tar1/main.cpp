@@ -27,24 +27,7 @@ void Multiplication3FOR(int **A, int **B,  int **SOL, int size){
 void MultiplicationBlock(int **A, int **B,  int **SOL, int size){
     FillMTRIX(A, size);
     FillMTRIX(B, size);
-    /*
-    for (int k = 0; k < size; k += 6)
-    {
-        for (int j = 0; j < size; j += 6)
-        {
-            for (int i = 0; i < size; ++i)
-            {
-                for (int jj = j; jj < min(j + 6, size); ++jj)
-                {
-                    for (int kk = k; kk < min(k + 6, size); ++kk)
-                    {
-                        SOL[i][jj] += A[i][kk] * B[kk][jj];
-                    }
-                }
-            }
-        }
-    }
-    */
+
     int s = 4;
     int N = size;
     for(int jj=0;jj<N;jj+= s){
