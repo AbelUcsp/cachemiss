@@ -1,4 +1,4 @@
-/* File:     pth_pi_mutex.c
+   /* File:     pth_pi_mutex.c
  * Purpose:  Estimate pi using series 
  *
  *              pi = 4*[1 - 1/3 + 1/5 - 1/7 + 1/9 - . . . ]
