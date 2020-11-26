@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <string>
 #include <opencv2/core/core.hpp>
-#include <opencv2/imgproc/imgproc.hpp>1
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include "device_launch_parameters.h"
@@ -17,70 +17,87 @@ using namespace std;
 
 #define NUM_TREADS 524
 
-__global__
-void cudaGrayScale(float *R, float *G, float *B, float* gray, int n) {
-	int i = blockDim.x*blockIdx.x + threadIdx.x;
-	if (i < n) {
-		gray[i] = static_cast<float>((R[i] * 0.21 + G[i] * 0.71 + B[i] * 0.07) / 350.0);
-	}
-}
-
-void grayscale(float* R, float* G, float* B, float* grayscale, int n) {
-	int size = n * sizeof(float);
-	float *d_R, *d_G, *d_B, *d_gray;
-	cudaMalloc((void **)&d_R, size);
-	cudaMemcpy(d_R, R, size, cudaMemcpyHostToDevice);
-	cudaMalloc((void **)&d_G, size);
-	cudaMemcpy(d_G, G, size, cudaMemcpyHostToDevice);
-	cudaMalloc((void **)&d_B, size);
-	cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice);
-	cudaMalloc((void **)&d_gray, size);
-
-	cudaGrayScale << <ceil(n / NUM_TREADS), NUM_TREADS >> >(d_R, d_G, d_B, d_gray, n);
-	cudaMemcpy(grayscale, d_gray, size, cudaMemcpyDeviceToHost);
-
-	cudaFree(d_R);
-	cudaFree(d_G);
-	cudaFree(d_B);
-	cudaFree(d_gray);
-}
-
-using namespace std;
 using namespace cv;
 
 
-int main() {
-	string image_path = "C:/Users/USER/Downloads/opencv/Van_Gogh.jpg";
+__global__ void rgb2grayKernel(unsigned char *Pout, unsigned char *Pin, int width,
+                            int height, int numChannels) {
+  // compute global thread coordinates
+  int row = threadIdx.y + blockIdx.y * blockDim.y;
+  int col = threadIdx.x + blockIdx.x * blockDim.x;
 
-	Mat matrix_image;
-	Mat matrix_filtered;
-	string result_image_path;
+  // linearize coordinates for data access
+  int grayOffset = row * width + col;
+  int colorOffset = grayOffset * numChannels;
 
-	matrix_image = imread(image_path, cv::IMREAD_COLOR);// CV_LOAD_IMAGE_COLOR);
-	if (!(matrix_image).data) {
-		cout << "Error reading image" << endl;
-		return 0;
-	}
-
-	int cols = matrix_image.cols;
-	int rows = matrix_image.rows;
-	float* Blue = new float[cols * rows];
-	float* Green = new float[cols * rows];
-	float* Red = new float[cols * rows];
-	float* GrayScaleMatrix = new float[cols * rows];
-	for (int i = 0; i < rows; ++i) {
-		for (int j = 0; j < cols; ++j) {
-			int pos = cols * i + j;
-			Blue[pos] = (float)matrix_image.at<cv::Vec3b>(i, j)[0];
-			Green[pos] = (float)matrix_image.at<cv::Vec3b>(i, j)[1];
-			Red[pos] = (float)matrix_image.at<cv::Vec3b>(i, j)[2];
-		}
-	}
-	grayscale(Red, Green, Blue, GrayScaleMatrix, cols * rows);
-	Mat gray = Mat(rows, cols, CV_32FC1, GrayScaleMatrix);
-	gray.convertTo(gray, CV_8UC3, 255.0);
-	imwrite("./Van_Gogh_grays.jpg", gray);
-
-	return 0;
+  if ((col < width) && (row < height)) {
+    Pout[grayOffset] = (0.21 * Pin[colorOffset + 2]) +
+                       (0.71 * Pin[colorOffset + 1]) +
+                       (0.07 * Pin[colorOffset]);
+  }
 }
 
+void grayScale(string fileName) {
+  // read image
+  Mat image;
+  image = imread(fileName, CV_LOAD_IMAGE_COLOR);
+  if (image.empty()) {
+    cout << "Cannot read image file " << fileName;
+    exit(1);
+  }
+
+  // define img params and timers
+  int imageChannels = 3;
+  int imageWidth = image.cols;
+  int imageHeight = image.rows;
+  size_t size_rgb = sizeof(unsigned char) * imageWidth * imageHeight * imageChannels;
+  size_t size_gray = sizeof(unsigned char) * imageWidth * imageHeight;
+
+  // allocate mem for host image vectors
+  unsigned char *h_grayImage = (unsigned char *)malloc(size_rgb);
+
+  // grab pointer to host rgb image
+  unsigned char *h_rgbImage = image.data;
+
+  // allocate mem for device rgb and gray
+  unsigned char *d_rgbImage;
+  unsigned char *d_grayImage;
+  cudaMalloc(&d_rgbImage, size_rgb);
+  cudaMalloc(&d_grayImage, size_gray);
+
+  // copy the rgb image from the host to the device and record the needed time
+  cudaMemcpy(d_rgbImage, h_rgbImage, size_rgb, cudaMemcpyHostToDevice);
+
+  // execution configuration parameters + kernel launch
+  dim3 dimBlock(16, 16);
+  dim3 dimGrid(ceil(imageWidth / 16.0), ceil(imageHeight / 16.0));
+  rgb2grayKernel<<<dimGrid, dimBlock>>>(d_grayImage, d_rgbImage, imageWidth,
+                                     imageHeight, imageChannels);
+
+  cudaMemcpy(h_grayImage, d_grayImage, size_gray, cudaMemcpyDeviceToHost);
+
+  // display images
+  Mat imageGray(imageHeight, imageWidth, CV_8UC1, h_grayImage);
+
+  imwrite("./grayscale.jpg", imageGray);
+
+  // free host and device memory
+  image.release();
+  imageGray.release();
+  free(h_grayImage);
+
+  cudaFree(d_rgbImage);
+  cudaFree(d_grayImage);
+}
+
+
+
+
+int main(int argc, char **argv) {
+		string img_path = "C:/Users/USER/Downloads/opencv/Van_Gogh.jpg";
+		//Van_Gogh.jpg
+		string image_path(img_path);// , cv::ImreadModes::IMREAD_GRAYSCALE);
+		grayScale(image_path)
+		
+		return 0;
+}
