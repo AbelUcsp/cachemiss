@@ -28,12 +28,17 @@ __global__ void rgb2grayKernel(unsigned char *Pout, unsigned char *Pin, int widt
 
   // linearize coordinates for data access
   int grayOffset = row * width + col;
-  int colorOffset = grayOffset * numChannels;
+
 
   if ((col < width) && (row < height)) {
-    Pout[grayOffset] = (0.21 * Pin[colorOffset + 2]) +
-                       (0.71 * Pin[colorOffset + 1]) +
-                       (0.07 * Pin[colorOffset]);
+
+	int rgbOffset = greyOffset*numChannels;
+	unsigned char r = Pin[rgbOffset ]; // red value for pixel
+	unsigned char g = Pin[rgbOffset + 2]; // green value for pixel
+	unsigned char b = Pin[rgbOffset + 3]; // blue value for pixel
+
+	Pout[grayOffset] = 0.21f*r + 0.71f*g + 0.07f*b;
+
   }
 }
 
